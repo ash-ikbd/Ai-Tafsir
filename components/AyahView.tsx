@@ -8,9 +8,19 @@ interface AyahViewProps {
   onTafsirClick: () => void;
   isLoadingTafsir: boolean;
   isActive: boolean; // Is this the currently focused ayah?
+  arabicFontSize: number;
+  translationFontSize: number;
 }
 
-export const AyahView: React.FC<AyahViewProps> = ({ data, language, onTafsirClick, isLoadingTafsir, isActive }) => {
+export const AyahView: React.FC<AyahViewProps> = ({ 
+  data, 
+  language, 
+  onTafsirClick, 
+  isLoadingTafsir, 
+  isActive,
+  arabicFontSize,
+  translationFontSize
+}) => {
   const translation = language === 'bn' ? data.textBn : data.textEn;
 
   return (
@@ -40,14 +50,20 @@ export const AyahView: React.FC<AyahViewProps> = ({ data, language, onTafsirClic
 
       {/* Arabic Text */}
       <div className="text-right mb-6" dir="rtl">
-        <p className="font-arabic text-3xl md:text-4xl leading-[2.2] text-slate-800 dark:text-slate-100 font-normal">
+        <p 
+          className="font-arabic leading-[2.2] text-slate-800 dark:text-slate-100 font-normal transition-all duration-200"
+          style={{ fontSize: `${arabicFontSize}px` }}
+        >
           {data.arabicText}
         </p>
       </div>
 
       {/* Translation */}
       <div className="text-left">
-        <p className={`text-lg text-slate-600 dark:text-slate-300 leading-relaxed ${language === 'bn' ? 'font-bengali' : 'font-sans'}`}>
+        <p 
+          className={`text-slate-600 dark:text-slate-300 leading-relaxed transition-all duration-200 ${language === 'bn' ? 'font-bengali' : 'font-sans'}`}
+          style={{ fontSize: `${translationFontSize}px` }}
+        >
           {translation}
         </p>
       </div>

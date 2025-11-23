@@ -12,7 +12,16 @@ type ViewMode = 'reader' | 'search';
 function App() {
   // Config State
   const [language, setLanguage] = useState<Language>('bn');
-  
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    }
+    return false;
+  });
+  const [arabicFontSize, setArabicFontSize] = useState(() => parseInt(localStorage.getItem('arabicFontSize') || '36'));
+  const [translationFontSize, setTranslationFontSize] = useState(() => parseInt(localStorage.getItem('translationFontSize') || '18'));
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   // Data State
   const [surahs, setSurahs] = useState<Surah[]>([]);
   const [currentSurah, setCurrentSurah] = useState<Surah | null>(null);
@@ -47,6 +56,26 @@ function App() {
   const touchEndX = useRef<number | null>(null);
   const touchEndY = useRef<number | null>(null);
 
+  // Scroll Refs
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+
+  // Apply Dark Mode
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [darkMode]);
+
+  // Persist Fonts
+  useEffect(() => {
+    localStorage.setItem('arabicFontSize', arabicFontSize.toString());
+    localStorage.setItem('translationFontSize', translationFontSize.toString());
+  }, [arabicFontSize, translationFontSize]);
+
   // Initial Load
   useEffect(() => {
     const fetchSurahs = async () => {
@@ -60,12 +89,26 @@ function App() {
     fetchSurahs();
   }, []);
 
+  // Scroll to active surah in sidebar
+  useEffect(() => {
+    if ((isSidebarOpen || window.innerWidth >= 1024) && currentSurah) {
+       const el = document.getElementById(`surah-${currentSurah.number}`);
+       el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }, [isSidebarOpen, currentSurah]);
+
+  // Scroll main view top on ayah change
+  useEffect(() => {
+    if (viewMode === 'reader') {
+       mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [ayahData, viewMode]);
+
   // Fetch Ayah when navigation changes
   const loadAyah = useCallback(async (surahNum: number, ayahNum: number) => {
     setIsLoadingAyah(true);
     setError(null);
     try {
-      // The service now fetches both BN and EN. UI decides which to show.
       const data = await QuranService.getAyah(surahNum, ayahNum);
       setAyahData(data);
       setCurrentAyahNum(ayahNum);
@@ -157,6 +200,14 @@ function App() {
     }
   };
 
+  const handleJumpToAyah = (e: React.ChangeEvent<HTMLInputElement>) => {
+     const num = parseInt(e.target.value);
+     if (!currentSurah || isNaN(num)) return;
+     if (num > 0 && num <= currentSurah.numberOfAyahs) {
+        loadAyah(currentSurah.number, num);
+     }
+  };
+
   // Swipe Handlers
   const onTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.targetTouches[0].clientX;
@@ -180,10 +231,8 @@ function App() {
     // Dominant horizontal swipe check
     if (Math.abs(xDist) > minSwipeDistance && Math.abs(xDist) > Math.abs(yDist)) {
       if (xDist > 0) {
-        // Swipe Left -> Next
         handleNextAyah();
       } else {
-        // Swipe Right -> Prev
         handlePrevAyah();
       }
     }
@@ -211,7 +260,7 @@ function App() {
   );
 
   return (
-    <div className={`flex h-screen overflow-hidden ${language === 'bn' ? 'font-bengali' : 'font-sans'} bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100`}>
+    <div className={`flex h-screen overflow-hidden ${language === 'bn' ? 'font-bengali' : 'font-sans'} bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 transition-colors duration-300`}>
       
       {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
@@ -278,24 +327,35 @@ function App() {
            </div>
            
            <div className="space-y-1">
-             {filteredSurahs.map(surah => (
-               <button
-                 key={surah.number}
-                 onClick={() => selectSurahFromList(surah)}
-                 className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm transition-all ${currentSurah?.number === surah.number && viewMode === 'reader' ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900'}`}
-               >
-                 <div className="flex items-center gap-3">
-                   <span className={`flex items-center justify-center w-6 h-6 text-xs rounded-full border font-sans ${currentSurah?.number === surah.number && viewMode === 'reader' ? 'border-white/30 bg-white/10' : 'border-slate-300 dark:border-slate-700 text-slate-500'}`}>
-                     {surah.number}
-                   </span>
-                   <div className="flex flex-col items-start font-sans">
-                      <span className="font-medium">{surah.englishName}</span>
-                      <span className="text-[10px] opacity-80">{surah.englishNameTranslation}</span>
+             {filteredSurahs.map(surah => {
+               const isActive = currentSurah?.number === surah.number && viewMode === 'reader';
+               return (
+                 <button
+                   key={surah.number}
+                   id={`surah-${surah.number}`}
+                   onClick={() => selectSurahFromList(surah)}
+                   className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm transition-all ${isActive ? 'bg-emerald-500 text-white shadow-md' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900'}`}
+                 >
+                   <div className="flex items-center gap-3">
+                     <span className={`flex items-center justify-center w-6 h-6 text-xs rounded-full border font-sans ${isActive ? 'border-white/30 bg-white/10' : 'border-slate-300 dark:border-slate-700 text-slate-500'}`}>
+                       {surah.number}
+                     </span>
+                     <div className="flex flex-col items-start font-sans">
+                        <span className="font-medium">{surah.englishName}</span>
+                        <div className="flex gap-2 items-center">
+                          <span className={`text-[10px] ${isActive ? 'opacity-80' : 'opacity-60'}`}>{surah.englishNameTranslation}</span>
+                          {isActive && (
+                            <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-mono">
+                               Ayah {currentAyahNum}
+                            </span>
+                          )}
+                        </div>
+                     </div>
                    </div>
-                 </div>
-                 <span className="font-arabic text-lg opacity-80">{surah.name.replace('سورة', '')}</span>
-               </button>
-             ))}
+                   <span className="font-arabic text-lg opacity-80">{surah.name.replace('سورة', '')}</span>
+                 </button>
+               );
+             })}
              {filteredSurahs.length === 0 && (
                <div className="px-4 py-4 text-center text-xs text-slate-400">
                  No Surah found.
@@ -307,17 +367,90 @@ function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        {/* Top Mobile Bar */}
-        <header className="lg:hidden h-16 border-b border-slate-200 dark:border-slate-800 flex items-center px-4 bg-white dark:bg-slate-950">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 text-slate-600 dark:text-slate-300">
-            <Icons.Menu className="w-6 h-6" />
-          </button>
-          <span className="ml-3 font-bold text-lg text-slate-800 dark:text-white font-sans">Nur Al-Quran</span>
+        {/* Top Header Bar */}
+        <header className="h-16 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 bg-white dark:bg-slate-950 z-20">
+          <div className="flex items-center gap-2">
+             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-600 dark:text-slate-300">
+               <Icons.Menu className="w-6 h-6" />
+             </button>
+             <span className="font-bold text-lg text-slate-800 dark:text-white font-sans lg:hidden">Nur Al-Quran</span>
+          </div>
+
+          <div className="relative">
+            <button 
+              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+              className={`p-2 rounded-full transition-colors ${isSettingsOpen ? 'bg-slate-100 dark:bg-slate-800 text-emerald-500' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+            >
+              <Icons.Settings className="w-5 h-5" />
+            </button>
+
+            {/* Settings Popover */}
+            {isSettingsOpen && (
+              <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 p-4 animate-in fade-in zoom-in-95 duration-200 origin-top-right">
+                <h4 className="font-bold text-slate-800 dark:text-slate-200 mb-4 text-sm uppercase tracking-wide flex items-center gap-2">
+                  <Icons.Settings className="w-4 h-4" /> Appearance
+                </h4>
+                
+                {/* Theme Toggle */}
+                <div className="flex items-center justify-between mb-6">
+                  <span className="text-sm text-slate-600 dark:text-slate-400">Theme</span>
+                  <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+                    <button 
+                      onClick={() => setDarkMode(false)}
+                      className={`p-1.5 rounded-md transition-all ${!darkMode ? 'bg-white text-orange-500 shadow-sm' : 'text-slate-400'}`}
+                    >
+                      <Icons.Sun className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => setDarkMode(true)}
+                      className={`p-1.5 rounded-md transition-all ${darkMode ? 'bg-slate-700 text-blue-400 shadow-sm' : 'text-slate-400'}`}
+                    >
+                      <Icons.Moon className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Arabic Font Size */}
+                <div className="mb-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Arabic Size</span>
+                    <span className="text-xs text-slate-400 font-mono">{arabicFontSize}px</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="24" 
+                    max="60" 
+                    value={arabicFontSize} 
+                    onChange={(e) => setArabicFontSize(Number(e.target.value))}
+                    className="w-full accent-emerald-500 h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+
+                {/* Translation Font Size */}
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Translation Size</span>
+                    <span className="text-xs text-slate-400 font-mono">{translationFontSize}px</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="14" 
+                    max="30" 
+                    value={translationFontSize} 
+                    onChange={(e) => setTranslationFontSize(Number(e.target.value))}
+                    className="w-full accent-emerald-500 h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </header>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar relative">
-          
+        <div 
+          ref={mainScrollRef}
+          className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar relative"
+        >
           {error && (
              <div className="mb-6 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-4 py-3 rounded-lg border border-red-200 dark:border-red-800 flex items-center gap-2">
                <Icons.Info className="w-5 h-5" />
@@ -432,6 +565,8 @@ function App() {
                     isActive={true}
                     isLoadingTafsir={isLoadingTafsir}
                     onTafsirClick={handleViewTafsir}
+                    arabicFontSize={arabicFontSize}
+                    translationFontSize={translationFontSize}
                   />
 
                   {/* Pagination Controls */}
@@ -441,15 +576,62 @@ function App() {
                        className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
                      >
                        <Icons.ChevronLeft className="w-5 h-5" />
-                       <span className="hidden sm:inline">Previous</span>
+                       <span className="hidden sm:inline">Prev</span>
                      </button>
 
-                     <span className="font-medium text-slate-800 dark:text-slate-200">
-                       {currentSurah?.englishName} {currentSurah?.number}:{currentAyahNum}
-                     </span>
+                     <div className="flex flex-col items-center">
+                       <span className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">
+                         {currentSurah?.englishName} {currentSurah?.number}
+                       </span>
+                       <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 rounded-md px-2 py-0.5">
+                         <span className="text-xs text-slate-400">Ayah</span>
+                         <input 
+                            type="number" 
+                            value={currentAyahNum}
+                            onChange={handleJumpToAyah}
+                            className="w-10 text-center bg-transparent text-sm font-bold text-slate-800 dark:text-white border-none p-0 focus:ring-0"
+                         />
+                         <span className="text-[10px] text-slate-400">/ {currentSurah?.numberOfAyahs}</span>
+                       </div>
+                     </div>
 
                      <button 
                        onClick={handleNextAyah}
                        className="flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
                      >
-                       <span className="hidden sm
+                       <span className="hidden sm:inline">Next</span>
+                       <Icons.ChevronRight className="w-5 h-5" />
+                     </button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-20 text-slate-400 font-sans">
+                  Select a Surah or Search to begin.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Tafsir Modal */}
+      <TafsirModal 
+        isOpen={isTafsirOpen} 
+        onClose={() => setIsTafsirOpen(false)} 
+        data={tafsirData} 
+        isLoading={isLoadingTafsir} 
+      />
+
+      {/* Surah Overview Modal */}
+      <SurahOverviewModal
+        isOpen={isOverviewOpen}
+        onClose={() => setIsOverviewOpen(false)}
+        data={overviewData}
+        isLoading={isLoadingOverview}
+        language={language}
+      />
+    </div>
+  );
+}
+
+export default App;
